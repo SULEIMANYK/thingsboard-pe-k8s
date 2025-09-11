@@ -1,0 +1,190 @@
+{{- if .Values.node.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "thingsboard-pe.fullname" . }}-node
+  namespace: {{ include "thingsboard-pe.namespace" . }}
+  labels:
+    {{- include "thingsboard-pe.componentLabels" (dict "component" "node" "root" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "thingsboard-pe.fullname" . }}-node
+  replicas: {{ .Values.node.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "thingsboard-pe.componentSelectorLabels" (dict "component" "node" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "thingsboard-pe.componentSelectorLabels" (dict "component" "node" "root" .) | nindent 8 }}
+    spec:
+      {{- if .Values.affinity.podAntiAffinity.enabled }}
+      affinity:
+        {{- include "thingsboard-pe.podAntiAffinity" (dict "component" "node" "root" .) | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "thingsboard-pe.securityContext" . | nindent 8 }}
+      volumes:
+        - name: node-config
+          configMap:
+            name: {{ include "thingsboard-pe.fullname" . }}-node-config
+            items:
+            - key: conf
+              path: thingsboard.conf
+            - key: logback
+              path: logback.xml
+        - name: node-logs
+          emptyDir: {}
+      containers:
+        - name: server
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository.node }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ include "thingsboard-pe.imagePullPolicy" . }}
+          ports:
+            - containerPort: 8080
+              name: http
+            {{- if include "thingsboard-pe.isMonolith" . }}
+            - containerPort: 1883
+              name: mqtt
+            - containerPort: 8883
+              name: mqtts
+            - containerPort: 5683
+              name: coap
+              protocol: UDP
+            - containerPort: 5684
+              name: coaps
+              protocol: UDP
+            - containerPort: 5685
+              name: lwm2m
+              protocol: UDP
+            - containerPort: 5686
+              name: lwm2ms
+              protocol: UDP
+            - containerPort: 5687
+              name: lwm2m-bs
+              protocol: UDP
+            - containerPort: 5688
+              name: lwm2ms-bs
+              protocol: UDP
+            {{- end }}
+            - containerPort: 7070
+              name: edge
+            - containerPort: 9090
+              name: grpc
+          resources:
+            {{- toYaml .Values.node.resources | nindent 12 }}
+          env:
+            - name: TB_SERVICE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TB_SERVICE_TYPE
+              value: {{ ternary "monolith" "monolith" (include "thingsboard-pe.isMonolith" .) | quote }}
+            - name: TB_QUEUE_TYPE
+              value: {{ ternary "in-memory" .Values.queue.type (include "thingsboard-pe.isMonolith" .) | quote }}
+            {{- if include "thingsboard-pe.isMicroservices" . }}
+            - name: ZOOKEEPER_ENABLED
+              value: "true"
+            - name: ZOOKEEPER_URL
+              value: "{{ include "thingsboard-pe.fullname" . }}-zookeeper:2181"
+            - name: JS_EVALUATOR
+              value: {{ .Values.node.env.jsEvaluator | quote }}
+            - name: CACHE_TYPE
+              value: {{ .Values.cache.type | quote }}
+            - name: HTTP_ENABLED
+              value: {{ .Values.node.env.httpEnabled | quote }}
+            - name: MQTT_ENABLED
+              value: {{ .Values.node.env.mqttEnabled | quote }}
+            - name: COAP_ENABLED
+              value: {{ .Values.node.env.coapEnabled | quote }}
+            - name: SNMP_ENABLED
+              value: {{ .Values.node.env.snmpEnabled | quote }}
+            - name: LWM2M_ENABLED
+              value: {{ .Values.node.env.lwm2mEnabled | quote }}
+            {{- else }}
+            - name: COAP_BIND_ADDRESS
+              value: "0.0.0.0"
+            - name: COAP_BIND_PORT
+              value: "5683"
+            - name: COAP_TIMEOUT
+              value: "10000"
+            {{- end }}
+            - name: HTTP_LOG_CONTROLLER_ERROR_STACK_TRACE
+              value: {{ .Values.node.env.logControllerErrorStackTrace | quote }}
+            - name: REPORTS_SERVER_ENDPOINT_URL
+              value: "http://{{ include "thingsboard-pe.fullname" . }}-web-report:8383"
+            - name: TB_SERVICE_INTEGRATIONS_SUPPORTED
+              value: {{ .Values.node.env.integrationsSupported | quote }}
+            - name: TB_LICENSE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "thingsboard-pe.licenseSecretName" . }}
+                  key: {{ .Values.global.license.secretKey }}
+            - name: TB_LICENSE_INSTANCE_DATA_FILE
+              value: "/data/instance-license-$(TB_SERVICE_ID).data"
+          envFrom:
+            - configMapRef:
+                name: {{ include "thingsboard-pe.fullname" . }}-db-config
+            {{- if eq .Values.queue.type "kafka" }}
+            - configMapRef:
+                name: {{ include "thingsboard-pe.fullname" . }}-kafka-config
+            {{- end }}
+            {{- if eq .Values.cache.type "redis" }}
+            - configMapRef:
+                name: {{ include "thingsboard-pe.fullname" . }}-cache-config
+            {{- end }}
+          volumeMounts:
+            - name: node-config
+              mountPath: /config
+            - name: node-logs
+              mountPath: /var/log/thingsboard
+            - name: node-data
+              mountPath: /data
+              readOnly: false
+          readinessProbe:
+            httpGet:
+              path: /login
+              port: http
+            periodSeconds: 20
+          livenessProbe:
+            httpGet:
+              path: /login
+              port: http
+            initialDelaySeconds: 460
+            timeoutSeconds: 10
+            periodSeconds: 20
+      restartPolicy: Always
+  {{- if .Values.node.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: node-data
+      spec:
+        storageClassName: {{ .Values.node.persistence.storageClass | default (include "thingsboard-pe.storageClass" .) | quote }}
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: {{ .Values.node.persistence.size }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "thingsboard-pe.fullname" . }}-node
+  namespace: {{ include "thingsboard-pe.namespace" . }}
+  labels:
+    {{- include "thingsboard-pe.componentLabels" (dict "component" "node" "root" .) | nindent 4 }}
+spec:
+  type: {{ .Values.node.service.type }}
+  selector:
+    {{- include "thingsboard-pe.componentSelectorLabels" (dict "component" "node" "root" .) | nindent 4 }}
+  ports:
+    - port: {{ .Values.node.service.port }}
+      targetPort: http
+      name: http
+{{- end }}

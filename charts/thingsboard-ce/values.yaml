@@ -1,0 +1,454 @@
+# Default values for thingsboard-ce
+# This is a YAML-formatted file.
+
+# Global configuration
+global:
+  # Deployment mode: "monolith" or "microservices"
+  deploymentMode: "microservices"
+  
+  # Oracle Cloud specific settings
+  oracle:
+    # OCI storage class for persistent volumes
+    storageClass: "oci-bv"
+    # OCI Load Balancer configuration
+    loadBalancer:
+      shape: "flexible"
+      minBandwidth: 10
+      maxBandwidth: 100
+      enabled: true
+
+# Image configuration
+image:
+  registry: "docker.io"
+  repository:
+    node: "thingsboard/tb-node"
+    webUi: "thingsboard/tb-web-ui"
+    jsExecutor: "thingsboard/tb-js-executor"
+    mqttTransport: "thingsboard/tb-mqtt-transport"
+    httpTransport: "thingsboard/tb-http-transport"
+    coapTransport: "thingsboard/tb-coap-transport"
+    lwm2mTransport: "thingsboard/tb-lwm2m-transport"
+    snmpTransport: "thingsboard/tb-snmp-transport"
+  tag: "3.8.0"
+  pullPolicy: "Always"
+
+# Namespace configuration
+namespace:
+  create: true
+  name: "thingsboard"
+
+# Database configuration
+database:
+  type: "postgresql" # postgresql
+  host: "YOUR_OCI_DB_ENDPOINT"
+  port: 5432
+  name: "thingsboard"
+  username: "thingsboard"
+  password: "YOUR_OCI_DB_PASSWORD"
+  # Use existing secret instead of plain text password
+  existingSecret: ""
+  secretKey: "password"
+  # Database SSL and additional properties
+  ssl:
+    enabled: false
+  properties:
+    hibernateJdbcLobNonContextualCreation: "true"
+
+# Queue configuration (Kafka)
+queue:
+  type: "kafka" # "kafka" or "in-memory"
+  kafka:
+    servers: "tb-kafka:9092"
+    # For OCI Streaming (Kafka-compatible)
+    # servers: "streaming.us-ashburn-1.oci.oraclecloud.com:9092"
+    replicationFactor: 1
+    acks: "1"
+
+# Cache configuration (Redis/Valkey)
+cache:
+  type: "redis" # "redis" or "caffeine"
+  redis:
+    host: "tb-valkey"
+    port: 6379
+    # For OCI Cache with Valkey
+    # host: "your-oci-cache-endpoint.us-ashburn-1.rds.cloud.com"
+    useDefaultPoolConfig: false
+    # Authentication (if required)
+    password: ""
+    existingSecret: ""
+    secretKey: "password"
+
+# ThingsBoard Node (Core Service) configuration
+node:
+  enabled: true
+  replicaCount: 1
+  
+  # Resource configuration
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+  
+  # Storage configuration
+  persistence:
+    enabled: true
+    size: "5Gi"
+    storageClass: "" # Uses global.oracle.storageClass if empty
+  
+  # Service configuration
+  service:
+    type: "ClusterIP"
+    port: 8080
+  
+  # Environment variables
+  env:
+    serviceType: "monolith" # Will be overridden based on global.deploymentMode
+    logControllerErrorStackTrace: "false"
+    jsEvaluator: "remote"
+    httpEnabled: "false" # Disabled in microservices mode
+    mqttEnabled: "false" # Disabled in microservices mode
+    coapEnabled: "false" # Disabled in microservices mode
+    snmpEnabled: "false" # Disabled in microservices mode
+    lwm2mEnabled: "false" # Disabled in microservices mode
+
+# Web UI configuration
+webUi:
+  enabled: true
+  replicaCount: 2
+  
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "200Mi"
+    limits:
+      cpu: "500m"
+      memory: "400Mi"
+  
+  service:
+    type: "LoadBalancer"
+    port: 80
+    targetPort: 8080
+    annotations:
+      service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+      service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+      service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+  
+  env:
+    httpBindAddress: "0.0.0.0"
+    httpBindPort: "8080"
+    enableProxy: "false"
+    loggerLevel: "info"
+    nodeOptions: "--max-old-space-size=200"
+
+# JS Executor configuration
+jsExecutor:
+  enabled: true
+  replicaCount: 5
+  
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "200Mi"
+    limits:
+      cpu: "250m"
+      memory: "200Mi"
+  
+  env:
+    remoteJsEvalRequestTopic: "js_eval.requests"
+    loggerLevel: "info"
+    scriptBodyTraceFrequency: "1000"
+    nodeOptions: "--max-old-space-size=200"
+
+# Transport services configuration
+transports:
+  # MQTT Transport
+  mqtt:
+    enabled: true
+    replicaCount: 1
+    
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+    
+    service:
+      type: "LoadBalancer"
+      port: 1883
+      annotations:
+        service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+    
+    persistence:
+      enabled: true
+      size: "1Gi"
+    
+    env:
+      mqttBindAddress: "0.0.0.0"
+      mqttBindPort: "1883"
+      mqttTimeout: "10000"
+  
+  # HTTP Transport
+  http:
+    enabled: true
+    replicaCount: 1
+    
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+    
+    service:
+      type: "LoadBalancer"
+      port: 8080
+      annotations:
+        service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+    
+    persistence:
+      enabled: true
+      size: "1Gi"
+    
+    env:
+      httpBindAddress: "0.0.0.0"
+      httpBindPort: "8080"
+      httpRequestTimeout: "60000"
+  
+  # CoAP Transport
+  coap:
+    enabled: true
+    replicaCount: 1
+    
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+    
+    service:
+      type: "LoadBalancer"
+      port: 5683
+      protocol: "UDP"
+      annotations:
+        service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+    
+    env:
+      coapBindAddress: "0.0.0.0"
+      coapBindPort: "5683"
+      coapTimeout: "10000"
+
+  # LwM2M Transport
+  lwm2m:
+    enabled: false
+    replicaCount: 1
+    
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+    
+    service:
+      type: "LoadBalancer"
+      port: 5685
+      protocol: "UDP"
+      annotations:
+        service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+    
+    env:
+      lwm2mBindAddress: "0.0.0.0"
+      lwm2mBindPort: "5685"
+      lwm2mTimeout: "10000"
+
+  # SNMP Transport
+  snmp:
+    enabled: false
+    replicaCount: 1
+    
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+    
+    service:
+      type: "LoadBalancer"
+      port: 1161
+      protocol: "UDP"
+      annotations:
+        service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+    
+    env:
+      snmpBindAddress: "0.0.0.0"
+      snmpBindPort: "1161"
+
+# Third-party services (only deployed when not using external services)
+thirdParty:
+  # Zookeeper configuration
+  zookeeper:
+    enabled: true
+    replicaCount: 3
+    
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+    
+    persistence:
+      data:
+        enabled: true
+        size: "5Gi"
+      datalog:
+        enabled: true
+        size: "5Gi"
+    
+    service:
+      port: 2181
+  
+  # Kafka configuration
+  kafka:
+    enabled: true
+    replicaCount: 1
+    
+    image:
+      repository: "bitnamilegacy/kafka"
+      tag: "4.0.0"
+    
+    resources:
+      requests:
+        cpu: "1000m"
+        memory: "2Gi"
+      limits:
+        cpu: "2000m"
+        memory: "4Gi"
+    
+    persistence:
+      dataLogs:
+        enabled: true
+        size: "50Gi"
+      appLogs:
+        enabled: true
+        size: "5Gi"
+    
+    config:
+      clusterId: "A0SZ6TGET1mhlQYl49uBSQ"
+      autoCreateTopics: false
+      logRetentionBytes: "1073741824"
+      segmentBytes: "26214400"
+      logRetentionMs: "300000"
+      logCleanupPolicy: "delete"
+      offsetsTopicReplicationFactor: 1
+      transactionStateLogMinIsr: 1
+      transactionStateLogReplicationFactor: 1
+  
+  # Valkey (Redis) configuration
+  valkey:
+    enabled: true
+    replicaCount: 1
+    
+    image:
+      repository: "bitnamilegacy/valkey"
+      tag: "8.0"
+    
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        cpu: "1000m"
+        memory: "2Gi"
+    
+    persistence:
+      enabled: true
+      size: "5Gi"
+    
+    config:
+      maxMemory: "1gb"
+      maxMemoryPolicy: "allkeys-lru"
+
+# Security configuration
+securityContext:
+  runAsUser: 799
+  runAsNonRoot: true
+  fsGroup: 799
+
+# Affinity and node selection
+affinity:
+  podAntiAffinity:
+    enabled: true
+    requiredDuringSchedulingIgnoredDuringExecution: true
+    topologyKey: "kubernetes.io/hostname"
+
+# Node selector for Oracle Cloud
+nodeSelector: {}
+  # Example for OCI node pools:
+  # node.kubernetes.io/instance-type: "VM.Standard.E3.Flex"
+
+# Tolerations for Oracle Cloud
+tolerations: []
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Ingress configuration (alternative to LoadBalancer)
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: thingsboard.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+    # - secretName: thingsboard-tls
+    #   hosts:
+    #     - thingsboard.local
+
+# Monitoring and observability
+monitoring:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    interval: "30s"
+    path: "/metrics"
+
+# Database initialization
+dbInit:
+  enabled: true
+  loadDemo: true
+  image:
+    repository: "thingsboard/tb-node"
+    tag: "3.8.0"
+    pullPolicy: "Always"

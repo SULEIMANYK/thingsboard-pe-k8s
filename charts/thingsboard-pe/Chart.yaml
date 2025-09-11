@@ -1,0 +1,23 @@
+apiVersion: v2
+name: thingsboard-pe
+description: A Helm chart for ThingsBoard Professional Edition on Oracle Cloud Infrastructure
+type: application
+version: 1.0.0
+appVersion: "4.2.0PE"
+keywords:
+  - thingsboard
+  - iot
+  - oracle-cloud
+  - oci
+  - professional-edition
+home: https://thingsboard.io/
+sources:
+  - https://github.com/thingsboard/thingsboard-pe-k8s
+maintainers:
+  - name: Suleiman Yaakoubi
+    email: info@thingsboard.io
+  - name: Oracle Cloud Integration
+    email: support@thingsboard.io
+annotations:
+  category: IoT Platform
+  licenses: ThingsBoard PE License

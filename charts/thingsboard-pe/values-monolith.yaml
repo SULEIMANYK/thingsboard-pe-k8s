@@ -1,0 +1,251 @@
+# Values for ThingsBoard PE Monolith deployment on Oracle Cloud
+# This is a YAML-formatted file.
+
+# Global configuration
+global:
+  # Deployment mode: "monolith"
+  deploymentMode: "monolith"
+  
+  # ThingsBoard PE license key (required)
+  license:
+    key: ""
+    existingSecret: ""
+    secretKey: "license-key"
+  
+  # Oracle Cloud specific settings
+  oracle:
+    storageClass: "oci-bv"
+    loadBalancer:
+      shape: "flexible"
+      minBandwidth: 10
+      maxBandwidth: 100
+      enabled: true
+
+# Image configuration
+image:
+  registry: "docker.io"
+  repository:
+    node: "thingsboard/tb-pe-node"
+    webReport: "thingsboard/tb-pe-web-report"
+  tag: "4.2.0PE"
+  pullPolicy: "Always"
+
+# Namespace configuration
+namespace:
+  create: true
+  name: "thingsboard"
+
+# Database configuration
+database:
+  type: "postgresql"
+  host: "YOUR_OCI_DB_ENDPOINT"
+  port: 5432
+  name: "thingsboard"
+  username: "thingsboard"
+  password: "YOUR_OCI_DB_PASSWORD"
+  existingSecret: ""
+  secretKey: "password"
+  properties:
+    hibernateJdbcLobNonContextualCreation: "true"
+
+# Queue configuration (in-memory for monolith)
+queue:
+  type: "in-memory"
+
+# Cache configuration (local for monolith)  
+cache:
+  type: "caffeine"
+
+# ThingsBoard Node (Monolith) configuration
+node:
+  enabled: true
+  replicaCount: 1
+  
+  # Resource configuration for monolith
+  resources:
+    requests:
+      cpu: "2000m"
+      memory: "4Gi"
+    limits:
+      cpu: "4000m"
+      memory: "8Gi"
+  
+  # Storage configuration
+  persistence:
+    enabled: true
+    size: "10Gi"
+    storageClass: ""
+  
+  # Service configuration
+  service:
+    type: "ClusterIP"
+    port: 8080
+  
+  # Environment variables for monolith
+  env:
+    serviceType: "monolith"
+    logControllerErrorStackTrace: "false"
+    jsEvaluator: "local"
+    httpEnabled: "true"
+    mqttEnabled: "true"
+    coapEnabled: "true"
+    snmpEnabled: "true"
+    lwm2mEnabled: "true"
+    integrationsSupported: "ALL"
+
+# Web UI configuration (exposed via LoadBalancer)
+webUi:
+  enabled: true
+  replicaCount: 1
+  
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "200Mi"
+    limits:
+      cpu: "500m"
+      memory: "400Mi"
+  
+  service:
+    type: "LoadBalancer"
+    port: 80
+    targetPort: 8080
+    annotations:
+      service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+      service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+      service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+  
+  env:
+    httpBindAddress: "0.0.0.0"
+    httpBindPort: "8080"
+    enableProxy: "false"
+    loggerLevel: "info"
+    nodeOptions: "--max-old-space-size=200"
+
+# Web Report service configuration
+webReport:
+  enabled: true
+  replicaCount: 1
+  
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "400Mi"
+    limits:
+      cpu: "500m"
+      memory: "800Mi"
+  
+  service:
+    type: "ClusterIP"
+    port: 8383
+  
+  env:
+    httpBindAddress: "0.0.0.0"
+    httpBindPort: "8383"
+    loggerLevel: "info"
+    nodeOptions: "--max-old-space-size=400"
+    defaultPageNavigationTimeout: "120000"
+    dashboardLoadWaitTime: "3000"
+    useNewPageForReport: "true"
+
+# Disable microservices components
+jsExecutor:
+  enabled: false
+
+integrationExecutor:
+  enabled: false
+
+# Disable transport services (handled by monolith)
+transports:
+  mqtt:
+    enabled: false
+  http:
+    enabled: false
+  coap:
+    enabled: false
+
+# Enable transport LoadBalancers for monolith
+transportServices:
+  # MQTT Transport LoadBalancer
+  mqtt:
+    enabled: true
+    type: "LoadBalancer"
+    port: 1883
+    annotations:
+      service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+      service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+      service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+  
+  # HTTP Transport LoadBalancer  
+  http:
+    enabled: true
+    type: "LoadBalancer"
+    port: 8080
+    annotations:
+      service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+      service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+      service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+  
+  # CoAP Transport LoadBalancer
+  coap:
+    enabled: true
+    type: "LoadBalancer"
+    port: 5683
+    protocol: "UDP"
+    annotations:
+      service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+      service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+      service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+
+# Disable third-party services for monolith
+thirdParty:
+  zookeeper:
+    enabled: false
+  kafka:
+    enabled: false
+  valkey:
+    enabled: false
+
+# Security configuration
+securityContext:
+  runAsUser: 799
+  runAsNonRoot: true
+  fsGroup: 799
+
+# Affinity and node selection
+affinity:
+  podAntiAffinity:
+    enabled: true
+    requiredDuringSchedulingIgnoredDuringExecution: true
+    topologyKey: "kubernetes.io/hostname"
+
+# Node selector for Oracle Cloud
+nodeSelector: {}
+  # Example for OCI:
+  # node.kubernetes.io/instance-type: "VM.Standard.E3.Flex"
+
+# Tolerations
+tolerations: []
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Disable ingress (using LoadBalancer)
+ingress:
+  enabled: false
+
+# Monitoring
+monitoring:
+  enabled: false
+
+# Database initialization
+dbInit:
+  enabled: true
+  loadDemo: true
+  image:
+    repository: "thingsboard/tb-pe-node"
+    tag: "4.2.0PE"
+    pullPolicy: "Always"
