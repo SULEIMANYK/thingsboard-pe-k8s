@@ -1,0 +1,139 @@
+{{- if and (include "thingsboard-ce.isMicroservices" .) .Values.transports.mqtt.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "thingsboard-ce.fullname" . }}-mqtt-transport
+  namespace: {{ include "thingsboard-ce.namespace" . }}
+  labels:
+    {{- include "thingsboard-ce.componentLabels" (dict "component" "mqtt-transport" "root" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.transports.mqtt.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "thingsboard-ce.componentSelectorLabels" (dict "component" "mqtt-transport" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "thingsboard-ce.componentSelectorLabels" (dict "component" "mqtt-transport" "root" .) | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "thingsboard-ce.serviceAccountName" . }}
+      securityContext:
+        {{- include "thingsboard-ce.securityContext" . | nindent 8 }}
+      affinity:
+        {{- include "thingsboard-ce.podAntiAffinity" (dict "component" "mqtt-transport" "root" .) | nindent 8 }}
+        {{- with .Values.affinity.nodeAffinity }}
+        nodeAffinity:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mqtt-transport
+          image: "{{ .Values.image.repository.mqttTransport }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ include "thingsboard-ce.imagePullPolicy" . }}
+          ports:
+            - name: mqtt
+              containerPort: 1883
+              protocol: TCP
+          env:
+            - name: TB_SERVICE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TB_QUEUE_TYPE
+              value: {{ .Values.queue.type | quote }}
+            {{- if eq .Values.queue.type "kafka" }}
+            - name: TB_KAFKA_SERVERS
+              value: {{ .Values.queue.kafka.servers | quote }}
+            {{- end }}
+            {{- if .Values.cache.redis.enabled }}
+            - name: CACHE_TYPE
+              value: "redis"
+            - name: REDIS_HOST
+              value: {{ .Values.cache.redis.host | quote }}
+            - name: REDIS_PORT
+              value: {{ .Values.cache.redis.port | quote }}
+            {{- if .Values.cache.redis.password }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "thingsboard-ce.cacheSecretName" . }}
+                  key: REDIS_PASSWORD
+            {{- end }}
+            {{- end }}
+            {{- with .Values.transports.mqtt.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.transports.mqtt.resources | nindent 12 }}
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/thingsboard
+          livenessProbe:
+            tcpSocket:
+              port: mqtt
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          readinessProbe:
+            tcpSocket:
+              port: mqtt
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+      volumes:
+        - name: logs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "thingsboard-ce.fullname" . }}-mqtt-transport
+  namespace: {{ include "thingsboard-ce.namespace" . }}
+  labels:
+    {{- include "thingsboard-ce.componentLabels" (dict "component" "mqtt-transport" "root" .) | nindent 4 }}
+  annotations:
+    {{- if .Values.transports.mqtt.service.annotations }}
+    {{- toYaml .Values.transports.mqtt.service.annotations | nindent 4 }}
+    {{- end }}
+    {{- if eq .Values.transports.mqtt.service.type "LoadBalancer" }}
+    {{- include "thingsboard-ce.loadBalancerAnnotations" . | nindent 4 }}
+    {{- end }}
+spec:
+  type: {{ .Values.transports.mqtt.service.type }}
+  {{- if and (eq .Values.transports.mqtt.service.type "LoadBalancer") .Values.transports.mqtt.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.transports.mqtt.service.loadBalancerIP }}
+  {{- end }}
+  {{- if and (eq .Values.transports.mqtt.service.type "LoadBalancer") .Values.transports.mqtt.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- range .Values.transports.mqtt.service.loadBalancerSourceRanges }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- end }}
+  ports:
+    - port: {{ .Values.transports.mqtt.service.port }}
+      targetPort: mqtt
+      protocol: TCP
+      name: mqtt
+      {{- if and (or (eq .Values.transports.mqtt.service.type "NodePort") (eq .Values.transports.mqtt.service.type "LoadBalancer")) .Values.transports.mqtt.service.nodePort }}
+      nodePort: {{ .Values.transports.mqtt.service.nodePort }}
+      {{- end }}
+  selector:
+    {{- include "thingsboard-ce.componentSelectorLabels" (dict "component" "mqtt-transport" "root" .) | nindent 4 }}
+{{- end }}

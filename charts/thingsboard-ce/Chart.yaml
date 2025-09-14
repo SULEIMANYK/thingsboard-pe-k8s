@@ -2,8 +2,8 @@ apiVersion: v2
 name: thingsboard-ce
 description: A Helm chart for ThingsBoard Community Edition on Oracle Cloud Infrastructure
 type: application
-version: 1.0.0
-appVersion: "3.8.0"
+version: 2.0.0
+appVersion: "4.2.0"
 keywords:
   - thingsboard
   - iot

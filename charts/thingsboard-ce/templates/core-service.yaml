@@ -1,0 +1,185 @@
+{{- if include "thingsboard-ce.isMicroservices" . }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "thingsboard-ce.fullname" . }}-core
+  namespace: {{ include "thingsboard-ce.namespace" . }}
+  labels:
+    {{- include "thingsboard-ce.componentLabels" (dict "component" "core" "root" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "thingsboard-ce.fullname" . }}-core
+  replicas: {{ .Values.microservices.core.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "thingsboard-ce.componentSelectorLabels" (dict "component" "core" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "thingsboard-ce.componentSelectorLabels" (dict "component" "core" "root" .) | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "thingsboard-ce.serviceAccountName" . }}
+      securityContext:
+        {{- include "thingsboard-ce.securityContext" . | nindent 8 }}
+      affinity:
+        {{- include "thingsboard-ce.podAntiAffinity" (dict "component" "core" "root" .) | nindent 8 }}
+        {{- with .Values.affinity.nodeAffinity }}
+        nodeAffinity:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: install-schema
+          image: "{{ .Values.image.repository.node }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ include "thingsboard-ce.imagePullPolicy" . }}
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z {{ .Values.database.host }} {{ .Values.database.port }}; do
+                echo "Waiting for database..."
+                sleep 2
+              done
+              echo "Database is ready"
+              {{- if eq .Values.queue.type "kafka" }}
+              until nc -z {{ include "thingsboard-ce.kafkaHost" . }} {{ .Values.queue.kafka.port }}; do
+                echo "Waiting for Kafka..."
+                sleep 2
+              done
+              echo "Kafka is ready"
+              {{- end }}
+              /usr/share/thingsboard/bin/install/install.sh --loadDemo
+          env:
+            {{- include "thingsboard-ce.databaseEnv" . | nindent 12 }}
+            - name: INSTALL_TB
+              value: "true"
+            {{- if .Values.microservices.core.loadDemo }}
+            - name: LOAD_DEMO
+              value: "true"
+            {{- end }}
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/thingsboard
+      containers:
+        - name: core
+          image: "{{ .Values.image.repository.node }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ include "thingsboard-ce.imagePullPolicy" . }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: rpc
+              containerPort: 9090
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.microservices.core.resources | nindent 12 }}
+          env:
+            {{- include "thingsboard-ce.databaseEnv" . | nindent 12 }}
+            {{- include "thingsboard-ce.coreEnv" . | nindent 12 }}
+            {{- include "thingsboard-ce.cacheEnv" . | nindent 12 }}
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/thingsboard
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+      volumes:
+        - name: logs
+          emptyDir: {}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ include "thingsboard-ce.storageClass" . }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "thingsboard-ce.fullname" . }}-core
+  namespace: {{ include "thingsboard-ce.namespace" . }}
+  labels:
+    {{- include "thingsboard-ce.componentLabels" (dict "component" "core" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: 9090
+      targetPort: rpc
+      protocol: TCP
+      name: rpc
+  selector:
+    {{- include "thingsboard-ce.componentSelectorLabels" (dict "component" "core" "root" .) | nindent 4 }}
+{{- end }}
+
+{{/*
+Cache environment variables
+*/}}
+{{- define "thingsboard-ce.cacheEnv" -}}
+{{- if .Values.cache.redis.enabled }}
+- name: CACHE_TYPE
+  value: "redis"
+- name: REDIS_HOST
+  value: {{ .Values.cache.redis.host | quote }}
+- name: REDIS_PORT
+  value: {{ .Values.cache.redis.port | quote }}
+{{- if .Values.cache.redis.password }}
+- name: REDIS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "thingsboard-ce.cacheSecretName" . }}
+      key: REDIS_PASSWORD
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Kafka host helper
+*/}}
+{{- define "thingsboard-ce.kafkaHost" -}}
+{{- if .Values.queue.kafka.host }}
+{{- .Values.queue.kafka.host }}
+{{- else }}
+{{- printf "%s-kafka" (include "thingsboard-ce.fullname" .) }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,164 @@
+{{- if include "thingsboard-ce.isMonolith" . }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "thingsboard-ce.fullname" . }}
+  namespace: {{ include "thingsboard-ce.namespace" . }}
+  labels:
+    {{- include "thingsboard-ce.componentLabels" (dict "component" "core" "root" .) | nindent 4 }}
+spec:
+  serviceName: {{ include "thingsboard-ce.fullname" . }}
+  replicas: {{ .Values.monolith.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "thingsboard-ce.componentSelectorLabels" (dict "component" "core" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "thingsboard-ce.componentSelectorLabels" (dict "component" "core" "root" .) | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "thingsboard-ce.serviceAccountName" . }}
+      securityContext:
+        {{- include "thingsboard-ce.securityContext" . | nindent 8 }}
+      affinity:
+        {{- include "thingsboard-ce.podAntiAffinity" (dict "component" "core" "root" .) | nindent 8 }}
+        {{- with .Values.affinity.nodeAffinity }}
+        nodeAffinity:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: install-schema
+          image: "thingsboard/tb-postgres:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ include "thingsboard-ce.imagePullPolicy" . }}
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z {{ .Values.database.host }} {{ .Values.database.port }}; do
+                echo "Waiting for database..."
+                sleep 2
+              done
+              echo "Database is ready"
+              /usr/share/thingsboard/bin/install/install.sh --loadDemo
+          env:
+            {{- include "thingsboard-ce.databaseEnv" . | nindent 12 }}
+            - name: INSTALL_TB
+              value: "true"
+            {{- if .Values.monolith.loadDemo }}
+            - name: LOAD_DEMO
+              value: "true"
+            {{- end }}
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/thingsboard
+      containers:
+        - name: thingsboard
+          image: "thingsboard/tb-postgres:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ include "thingsboard-ce.imagePullPolicy" . }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: mqtt
+              containerPort: 1883
+              protocol: TCP
+            - name: coap
+              containerPort: 5683
+              protocol: UDP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.monolith.resources | nindent 12 }}
+          env:
+            {{- include "thingsboard-ce.databaseEnv" . | nindent 12 }}
+            {{- include "thingsboard-ce.coreEnv" . | nindent 12 }}
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/thingsboard
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+      volumes:
+        - name: logs
+          emptyDir: {}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ include "thingsboard-ce.storageClass" . }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}
+{{- end }}
+
+{{/*
+Database environment variables
+*/}}
+{{- define "thingsboard-ce.databaseEnv" -}}
+- name: SPRING_DATASOURCE_URL
+  value: "jdbc:{{ .Values.database.type }}://{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}"
+- name: SPRING_DATASOURCE_USERNAME
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "thingsboard-ce.databaseSecretName" . }}
+      key: SPRING_DATASOURCE_USERNAME
+- name: SPRING_DATASOURCE_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "thingsboard-ce.databaseSecretName" . }}
+      key: SPRING_DATASOURCE_PASSWORD
+{{- end }}
+
+{{/*
+Core service environment variables
+*/}}
+{{- define "thingsboard-ce.coreEnv" -}}
+- name: TB_SERVICE_ID
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.name
+- name: TB_QUEUE_TYPE
+  value: {{ .Values.queue.type | quote }}
+{{- if eq .Values.queue.type "kafka" }}
+- name: TB_KAFKA_SERVERS
+  value: {{ .Values.queue.kafka.servers | quote }}
+{{- end }}
+{{- with .Values.env }}
+{{- toYaml . | nindent 0 }}
+{{- end }}
+{{- end }}

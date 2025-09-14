@@ -29,7 +29,7 @@ image:
     coapTransport: "thingsboard/tb-coap-transport"
     lwm2mTransport: "thingsboard/tb-lwm2m-transport"
     snmpTransport: "thingsboard/tb-snmp-transport"
-  tag: "3.8.0"
+  tag: "4.2.0"
   pullPolicy: "Always"
 
 # Namespace configuration
@@ -77,6 +77,62 @@ cache:
     password: ""
     existingSecret: ""
     secretKey: "password"
+    enabled: false
+
+# Monolith deployment configuration
+monolith:
+  replicaCount: 1
+  loadDemo: false
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+# Microservices deployment configuration
+microservices:
+  core:
+    replicaCount: 1
+    loadDemo: false
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
+# Persistence configuration
+persistence:
+  enabled: true
+  size: "20Gi"
+  storageClass: "" # Uses global.oracle.storageClass if empty
+
+# Service configuration
+service:
+  type: "ClusterIP"
+  httpPort: 8080
+  mqttPort: 1883
+  coapPort: 5683
+  annotations: {}
+
+# Health check configuration
+livenessProbe:
+  initialDelaySeconds: 120
+  periodSeconds: 60
+  timeoutSeconds: 30
+  failureThreshold: 3
+
+readinessProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 15
+  failureThreshold: 3
+
+# Environment variables
+env: []
 
 # ThingsBoard Node (Core Service) configuration
 node:
@@ -450,5 +506,5 @@ dbInit:
   loadDemo: true
   image:
     repository: "thingsboard/tb-node"
-    tag: "3.8.0"
+    tag: "4.2.0"
     pullPolicy: "Always"

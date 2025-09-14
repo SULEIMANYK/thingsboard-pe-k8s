@@ -1,0 +1,81 @@
+# Development configuration for ThingsBoard Community Edition
+# This configuration is suitable for local development and testing
+
+global:
+  deploymentMode: "monolith"
+
+# Use a single replica for development
+monolith:
+  replicaCount: 1
+  loadDemo: true  # Load demo data for testing
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+
+# Database configuration
+database:
+  type: "postgresql"
+  host: "postgres.default.svc.cluster.local"
+  port: 5432
+  name: "thingsboard"
+  username: "thingsboard"
+  password: "thingsboard"
+
+# Enable persistence with smaller storage for dev
+persistence:
+  enabled: true
+  size: "5Gi"
+
+# Use NodePort for easy access during development
+service:
+  type: "NodePort"
+  httpPort: 8080
+  mqttPort: 1883
+  coapPort: 5683
+  httpNodePort: 30080
+  mqttNodePort: 30883
+  coapNodePort: 30683
+
+# Relaxed security context for development
+securityContext:
+  runAsUser: 999
+  runAsNonRoot: true
+  fsGroup: 999
+
+# No resource limits for local development
+resources:
+  requests:
+    cpu: "200m"
+    memory: "512Mi"
+  limits:
+    cpu: "500m"
+    memory: "1Gi"
+
+# Fast health checks for quicker development cycles
+livenessProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 5
+
+readinessProbe:
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Disable affinity rules for single-node development
+affinity:
+  podAntiAffinity:
+    enabled: false
+
+# Simple logging
+env:
+  - name: LOGGING_LEVEL_ROOT
+    value: "INFO"
+  - name: LOGGING_LEVEL_ORG_THINGSBOARD
+    value: "DEBUG"
